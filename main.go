@@ -18,7 +18,7 @@ import (
 	"time"
 	"sync"
 	"github.com/joho/godotenv"
-	"github.com/davecgh/go-spew/spew"
+	//"github.com/davecgh/go-spew/spew"
 	golog "github.com/ipfs/go-log"
 	libp2p "github.com/libp2p/go-libp2p"
 	crypto "github.com/libp2p/go-libp2p-crypto"
@@ -31,10 +31,10 @@ import (
 )
 
 type Tx struct {
-	from		string
-	to		string
-	amount		int
-	signature 	string
+	From		string
+	To		string
+	Amount		int
+	Signature 	string
 }
 
 type Block struct {
@@ -101,7 +101,7 @@ func generateBlock(oldBlock Block, signature string, txs []Tx) Block {
 		hash = calculateHash(newBlock)
 		if isHashValid(hash, newBlock.Difficulty) {
 		    newBlock.Hash = hash
-		    spew.Dump(newBlock)
+		    //spew.Dump(newBlock)
 		    break
 		} else {
 			//fmt.Println(calculateHash(newBlock))
@@ -131,6 +131,49 @@ func isBlockValid(newBlock, oldBlock Block) bool {
 	}
 	//check validity of txs
 	return true
+}
+
+func printCommand(bytes []byte) {
+	// Green console color: 	\x1b[32m
+	// Reset console color: 	\x1b[0m
+	fmt.Printf("\x1b[32m%s\x1b[0m ", string(bytes))
+}
+
+//this function reads command from command line, as print Blockchain, unverified transactions and send transaction
+func readCommand() {
+	stdReader := bufio.NewReader(os.Stdin)
+	for {
+		fmt.Print("\n> ")
+		sendData, err := stdReader.ReadString('\n')
+		if err != nil {
+			log.Fatal(err)
+		}
+		command := strings.TrimSpace(sendData)
+		//spew.Dump(command)
+
+		if command == "bc" {
+			bytes, err := json.MarshalIndent(Blockchain, "", "  ")
+			if err != nil {
+				log.Println(err)
+			} else{
+				printCommand(bytes)
+			}
+		} else if command == "ut" {
+			bytes, err := json.MarshalIndent(unverifiedTxs, "", "  ")
+			if err != nil {
+				log.Println(err)
+			} else{
+				printCommand(bytes)
+			}
+		} else if command == "h" {
+			fmt.Printf(`
+bc : Print Blockchain
+ut : Print unverified transactions
+h  : Print this helper`)
+		} else {
+			fmt.Printf("Invalid command, call h for help")
+		}
+	}
 }
 
 //P2P stuff
@@ -174,7 +217,7 @@ func makeBasicHost(listenPort int, randseed int64) (host.Host, error) {
 	}
 	fullAddr := addr.Encapsulate(hostAddr)
 	log.Printf("Full address: %s", fullAddr)
-	log.Printf("Run \"go run p2p.go -l %d -d %s\" on a different terminal\n", listenPort+1, fullAddr)
+	log.Printf("Run \"go run main.go -l %d -d %s\" on a different terminal\n", listenPort+1, fullAddr)
 	
 	return basicHost, nil
 }
@@ -241,7 +284,6 @@ func receiveUnverifiedTxs(rw *bufio.ReadWriter) {
 			//right now we replace if there are more, obv wrong!
 			if len(uTxs) > len(unverifiedTxs) {
 				unverifiedTxs = uTxs
-				
 			}
 			mutex.Unlock()
 		}
@@ -288,45 +330,6 @@ func broadcastUnverifiedTxs(rw *bufio.ReadWriter) {
 	}
 }
 
-
-//this function reads command from command line, as print Blockchain, unverified transactions and send transaction
-func readCommand() {
-	stdReader := bufio.NewReader(os.Stdin)
-	for {
-		fmt.Print("> ")
-		sendData, err := stdReader.ReadString('\n')
-		if err != nil {
-			log.Fatal(err)
-		}
-		spew.Dump(sendData)
-		// var tx Tx
-
-	 //    err = json.NewDecoder(os.Stdin).Decode(&tx)
-	 //    if err != nil {
-	 //        log.Fatal(err)
-	 //    }
-		// log.Println(tx)
-		// bytes, err := json.Marshal(tx)
-		// if err != nil {
-		// 	log.Println(err)
-		// }
-		// log.Println(bytes)
-		
-
-		// spew.Dump(tx)
-
-		// //print unverified txs
-		// bytes, err := json.MarshalIndent(unverifiedTxs, "", "  ")
-		// if err != nil {
-
-		// 	log.Fatal(err)
-		// }
-		// // Green console color: 	\x1b[32m
-		// // Reset console color: 	\x1b[0m
-		// fmt.Printf("\x1b[32m%s\x1b[0m> ", string(bytes))
-	}
-
-}
 
 func main() {
 	err := godotenv.Load()
