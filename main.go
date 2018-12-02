@@ -30,11 +30,14 @@ import (
 	gologging "github.com/whyrusleeping/go-logging"
 )
 
-type Tx struct {
+type UTXO struct {
+	Timestamp 	string
 	From		string
-	To		string
+	To			string
 	Amount		int
-	Signature 	string
+	Id 			string
+	PublicKey 	string
+	Fee			int
 }
 
 type Block struct {
@@ -45,45 +48,81 @@ type Block struct {
 	PrevHash  	string
 	Difficulty	int
 	Nonce 		string
-	Txs			[]Tx
+	Txos		[]UTXO
 }
 
-const difficulty = 1
-const broadcastInterval = 5 * time.Second
-const miningInterval = 5 * time.Second
+type BroadcastData struct {
+	Blockchain 	[]Block
+	UTXOs 		[]UTXO
+}
+
+const POW_DIFFICULTY = 1
+const BROADCAST_INTERVAL = 5 * time.Second
+const MINING_INTERVAL = 5 * time.Second
+const UTXO_PER_BLOCK = 5
 
 var Blockchain []Block
-var unverifiedTxs []Tx
-var mutex =&sync.Mutex{}
+var UTXOs []UTXO //maybe we should use a map[string]UTXO for easily integrate new UTXO received from other peers
+var Data BroadcastData
+var Mutex =&sync.Mutex{}
 
-func calculateHash(block Block) string {
-	record := strconv.Itoa(block.Index) + block.Timestamp + block.Signature + block.PrevHash + block.Nonce //add txs to be hashed (merkle root?)
+func getBlockHash(block Block) string {
+	record := strconv.Itoa(block.Index) + block.Timestamp + block.Signature + block.PrevHash + block.Nonce //add utxos to be hashed (merkle root?)
 	h := sha256.New()
 	h.Write([]byte(record))
 	hashed := h.Sum(nil)
 	return hex.EncodeToString(hashed)
 }
 
-func isHashValid(hash string, difficulty int) bool {
+func isPoWValid(hash string, difficulty int) bool {
 	prefix := strings.Repeat("0", difficulty)
 	return strings.HasPrefix(hash, prefix)
 }
 
+func isUTXOValid(utxo UTXO) bool {
+	return true
+}
+
+func newUTXO(to string) UTXO {
+	from := os.Getenv("SIG")
+	t := time.Now().String()
+	record := from + to + t
+	h := sha256.New()
+	h.Write([]byte(record))
+	id := hex.EncodeToString(h.Sum(nil))
+	return UTXO{t, from, to, 4, id, from, 5}
+}
+
 func mineNewBlock() {
 	for {
-		time.Sleep(miningInterval)
-		var txs []Tx
-		//gets first available unverifiedTxs and verify them
-		newBlock := generateBlock(Blockchain[len(Blockchain)-1], os.Getenv("SIG"), txs)
+		time.Sleep(MINING_INTERVAL)
+
+		//gets first available UTXOs and verify them
+		var txos []UTXO
+		for i := len(UTXOs) - 1; i >= 0; i-- {
+			//if valid add it to Block UTXOs
+			if isUTXOValid(UTXOs[i]) {
+				txos = append(txos, UTXOs[i])
+			}
+			//in both cases drop it from UTXO
+			Mutex.Lock()
+			UTXOs = append(UTXOs[:i], UTXOs[i+1:]...)
+			Mutex.Unlock()
+			if len(txos) >= UTXO_PER_BLOCK {
+				break
+			}
+		}
+
+		newBlock := generateBlock(Blockchain[len(Blockchain)-1], os.Getenv("SIG"), txos)
 		if isBlockValid(newBlock, Blockchain[len(Blockchain)-1]) {
-			mutex.Lock()
+			Mutex.Lock()
 			Blockchain = append(Blockchain, newBlock)
-			mutex.Unlock()
+			Mutex.Unlock()
 		}
 	}
 }
 
-func generateBlock(oldBlock Block, signature string, txs []Tx) Block {
+func generateBlock(oldBlock Block, signature string, txos []UTXO) Block {
 	var newBlock Block
 	var hash string
 	t := time.Now()
@@ -92,19 +131,19 @@ func generateBlock(oldBlock Block, signature string, txs []Tx) Block {
 	newBlock.Timestamp = t.String()
 	newBlock.Signature = signature
 	newBlock.PrevHash = oldBlock.Hash
-	newBlock.Difficulty = difficulty
-	newBlock.Txs = txs
-	//add code to add txs and check their validity
+	newBlock.Difficulty = POW_DIFFICULTY
+	newBlock.Txos = txos
+	//add code to add utxos and check their validity
 	for i := 0; ; i++ {
 		hex := fmt.Sprintf("%x", i)
 		newBlock.Nonce = hex
-		hash = calculateHash(newBlock)
-		if isHashValid(hash, newBlock.Difficulty) {
+		hash = getBlockHash(newBlock)
+		if isPoWValid(hash, newBlock.Difficulty) {
 		    newBlock.Hash = hash
 		    //spew.Dump(newBlock)
 		    break
 		} else {
-			//fmt.Println(calculateHash(newBlock))
+			//fmt.Println(getBlockHash(newBlock))
 			time.Sleep(25 * time.Millisecond)
 			continue		        
 		}
@@ -121,15 +160,15 @@ func isBlockValid(newBlock, oldBlock Block) bool {
 	if oldBlock.Hash != newBlock.PrevHash {
 		return false
 	}
-	hash := calculateHash(newBlock)
+	hash := getBlockHash(newBlock)
 	if hash != newBlock.Hash {
 		return false
 	}
 	//check difficulty
-	if !isHashValid(hash, newBlock.Difficulty) {
+	if !isPoWValid(hash, newBlock.Difficulty) {
 		return false
 	}
-	//check validity of txs
+	//check validity of utxos
 	return true
 }
 
@@ -150,7 +189,9 @@ func readCommand() {
 		}
 		command := strings.TrimSpace(sendData)
 		//spew.Dump(command)
-
+		if command == "" {
+			continue
+		}
 		if command == "bc" {
 			bytes, err := json.MarshalIndent(Blockchain, "", "  ")
 			if err != nil {
@@ -159,7 +200,19 @@ func readCommand() {
 				printCommand(bytes)
 			}
 		} else if command == "ut" {
-			bytes, err := json.MarshalIndent(unverifiedTxs, "", "  ")
+			bytes, err := json.MarshalIndent(UTXOs, "", "  ")
+			if err != nil {
+				log.Println(err)
+			} else{
+				printCommand(bytes)
+			}
+		} else if commands := strings.Fields(command); commands[0] == "nut" && len(commands) == 2 {
+			to := commands[1]
+			newUTXO := newUTXO(to)
+			Mutex.Lock()
+			UTXOs = append(UTXOs, newUTXO)
+			Mutex.Unlock()
+			bytes, err := json.MarshalIndent(newUTXO, "", "  ")
 			if err != nil {
 				log.Println(err)
 			} else{
@@ -167,9 +220,13 @@ func readCommand() {
 			}
 		} else if command == "h" {
 			fmt.Printf(`
-bc : Print Blockchain
-ut : Print unverified transactions
-h  : Print this helper`)
+bc : Display Blockchain
+ut : Display unverified transaction outputs (UTXOs)
+nut : Create new UTXO
+h  : Display this helper
+q  : Quit`)
+		} else if command == "q" {
+			os.Exit(1)
 		} else {
 			fmt.Printf("Invalid command, call h for help")
 		}
@@ -216,8 +273,7 @@ func makeBasicHost(listenPort int, randseed int64) (host.Host, error) {
 		}
 	}
 	fullAddr := addr.Encapsulate(hostAddr)
-	log.Printf("Full address: %s", fullAddr)
-	log.Printf("Run \"go run main.go -l %d -d %s\" on a different terminal\n", listenPort+1, fullAddr)
+	log.Printf("go run main.go -l %d -d %s\n", listenPort+1, fullAddr)
 	
 	return basicHost, nil
 }
@@ -225,15 +281,12 @@ func makeBasicHost(listenPort int, randseed int64) (host.Host, error) {
 func handleStream(s net.Stream) {
 	log.Println("New stream connected")
 	rw := bufio.NewReadWriter(bufio.NewReader(s), bufio.NewWriter(s))
-	go broadcastBlockchain(rw)
-	go broadcastUnverifiedTxs(rw)
-	go receiveBlockchain(rw)
-	go receiveUnverifiedTxs(rw)
+	go broadcastData(rw)
+	go receiveBroadcastData(rw)
 	
 }
 
-func receiveBlockchain(rw *bufio.ReadWriter) {
-
+func receiveBroadcastData(rw *bufio.ReadWriter) {
 	for {
 		str, err := rw.ReadString('\n')
 		if err != nil {
@@ -245,91 +298,49 @@ func receiveBlockchain(rw *bufio.ReadWriter) {
 		}
 		if str != "\n" {
 
-			chain := make([]Block, 0)
-			if err := json.Unmarshal([]byte(str), &chain); err != nil {
+			data := BroadcastData{}
+			if err := json.Unmarshal([]byte(str), &data); err != nil {
 				log.Fatal(err)
 			}
 
-			mutex.Lock()
+			Mutex.Lock()
+			chain := data.Blockchain
+			utxos := data.UTXOs
 			if len(chain) > len(Blockchain) {
 				Blockchain = chain
 			}
-			mutex.Unlock()
+
+			//how to update utxs??
+			if len(utxos) > len(UTXOs) {
+				UTXOs = utxos
+			}
+			Mutex.Unlock()
 		}
 			
 	}
 }
 
-func receiveUnverifiedTxs(rw *bufio.ReadWriter) {
-
+func broadcastData(rw *bufio.ReadWriter) {
+	//broadcast your blockchain version every BROADCAST_INTERVAL seconds.
+	//We need to broadcast also unverified utxos
 	for {
-		str, err := rw.ReadString('\n')
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		if str == "" {
-			return
-		}
-		if str != "\n" {
-
-			uTxs := make([]Tx, 0)
-			if err := json.Unmarshal([]byte(str), &uTxs); err != nil {
-				log.Fatal(err)
-			}
-
-			mutex.Lock()
-
-			//this is the complicated part. Do we take unions of both mine and received uTxs?
-			//right now we replace if there are more, obv wrong!
-			if len(uTxs) > len(unverifiedTxs) {
-				unverifiedTxs = uTxs
-			}
-			mutex.Unlock()
-		}
-	}
-}
-
-func broadcastBlockchain(rw *bufio.ReadWriter) {
-	//broadcast your blockchain version every broadcastInterval seconds.
-	//We need to broadcast also unverified txs
-	for {
-		time.Sleep(broadcastInterval)
+		time.Sleep(BROADCAST_INTERVAL)
 		
-		mutex.Lock()
-		bytes, err := json.Marshal(Blockchain)
+		Mutex.Lock()
+		Data = BroadcastData{Blockchain, UTXOs}
+		bytes, err := json.Marshal(Data)
 		if err != nil {
 			log.Println(err)
 		}
-		mutex.Unlock()
+		Mutex.Unlock()
 
-		mutex.Lock()
+		Mutex.Lock()
 		rw.WriteString(fmt.Sprintf("%s\n", string(bytes)))
 		rw.Flush()
-		mutex.Unlock()
+		Mutex.Unlock()
 
 	}
 }
-
-func broadcastUnverifiedTxs(rw *bufio.ReadWriter) {
-	//broadcast unverified txs
-	for {
-		time.Sleep(broadcastInterval)
-		
-		mutex.Lock()
-		bytes, err := json.Marshal(unverifiedTxs)
-		if err != nil {
-			log.Println(err)
-		}
-		mutex.Unlock()
-
-		mutex.Lock()
-		rw.WriteString(fmt.Sprintf("%s\n", string(bytes)))
-		rw.Flush()
-		mutex.Unlock()
-	}
-}
-
 
 func main() {
 	err := godotenv.Load()
@@ -337,11 +348,12 @@ func main() {
 		log.Fatal(err)
 	}
 	t := time.Now()
-	var txs []Tx
+	var utxos []UTXO
 	genesisBlock := Block{}
-	genesisBlock = Block{0, t.String(), os.Getenv("SIG"), calculateHash(genesisBlock), "", difficulty, "", txs}
+	genesisBlock = Block{0, t.String(), os.Getenv("SIG"), getBlockHash(genesisBlock), "", POW_DIFFICULTY, "", utxos}
 
 	Blockchain = append(Blockchain, genesisBlock)
+	UTXOs = make([]UTXO, 0)
 
 	// LibP2P code uses golog to log messages. They log with different
 	// string IDs (i.e. "swarm"). We can control the verbosity level for
@@ -422,10 +434,8 @@ func main() {
 		// Create a buffered stream so that read and writes are non blocking.
 		rw := bufio.NewReadWriter(bufio.NewReader(s), bufio.NewWriter(s))
 
-		go broadcastBlockchain(rw)
-		go broadcastUnverifiedTxs(rw)
-		go receiveBlockchain(rw)
-		go receiveUnverifiedTxs(rw)	
+		go broadcastData(rw)
+		go receiveBroadcastData(rw)
 		
 		select {} // hang forever
 
