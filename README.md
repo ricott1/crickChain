@@ -21,9 +21,10 @@ go get github.com/multiformats/go-multiaddr
 ```
 
 ## Run
-In a terminal:
+Run in a terminal:
 
-```go run *.go -m true
+```
+go run *.go -m true
 ```
 
 Get output address and copy paste the command in another terminal. It looks something like this:
@@ -31,3 +32,9 @@ Get output address and copy paste the command in another terminal. It looks some
 ```
 go run *.go -l 10001 -d /ip4/127.0.0.1/tcp/10000/ipfs/QmRrJF1WDt5rpTNSSfqmFkvHoo4JAV3ajoyU8PnEd7C1zT
 ```
+
+### Flags
+-l: P2P connection port (default=10000)
+-d: Target peer (default=None)
+-s: Random seed for id generation (default=Random)
+-m: Set node as miner (default=False)
