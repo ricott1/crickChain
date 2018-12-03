@@ -48,12 +48,12 @@ type Block struct {
 	PrevHash  	string
 	Difficulty	int
 	Nonce 		string
-	Txos		[]UTXO
+	Txos		map[string]*UTXO
 }
 
 type BroadcastData struct {
 	Blockchain 	[]Block
-	UTXOs 		[]UTXO
+	UTXOs 		map[string]*UTXO
 }
 
 const POW_DIFFICULTY = 1
@@ -62,7 +62,7 @@ const MINING_INTERVAL = 5 * time.Second
 const UTXO_PER_BLOCK = 5
 
 var Blockchain []Block
-var UTXOs []UTXO //maybe we should use a map[string]UTXO for easily integrate new UTXO received from other peers
+var UTXOs map[string]*UTXO //notice the *, meaning that this is a map of pointers. To assign we have to prepend & to the value. The map ensures that we don't have duplicates
 var Data BroadcastData
 var Mutex =&sync.Mutex{}
 
@@ -79,7 +79,17 @@ func isPoWValid(hash string, difficulty int) bool {
 	return strings.HasPrefix(hash, prefix)
 }
 
-func isUTXOValid(utxo UTXO) bool {
+func isUTXOValid(utxo *UTXO) bool {
+	//add to check if it was not included in previous block
+	for i := len(Blockchain) - 1; i >= 0; i-- {
+	    block := Blockchain[i]
+	    for k, _ := range block.Txos {
+	    	if utxo.Id == k {
+	    		return false
+	    	}
+	    }
+	}
+
 	return true
 }
 
@@ -93,26 +103,30 @@ func newUTXO(to string) UTXO {
 	return UTXO{t, from, to, 4, id, from, 5}
 }
 
+func filterUTXOs(utxos map[string]*UTXO) map[string]*UTXO{
+	for k, v := range utxos {
+			if k != v.Id {
+				delete(utxos, k)
+			} else if !isUTXOValid(v) {
+				delete(utxos, k)
+			}
+		}
+	return utxos
+}
+
 func mineNewBlock() {
 	for {
 		time.Sleep(MINING_INTERVAL)
-
-		//gets first available UTXOs and verify them
-		var txos []UTXO
-		for i := len(UTXOs) - 1; i >= 0; i-- {
-			//if valid add it to Block UTXOs
-			if isUTXOValid(UTXOs[i]) {
-				txos = append(txos, UTXOs[i])
+		//take the UTXO, filter them to be sure, and collect the first UTXO_PER_BLOCK into the block. One could instead order them to include those with higeher fees first.
+		txos := make(map[string]*UTXO)
+		//log.Println(UTXOs)
+		//log.Println(filterUTXOs(UTXOs))
+		for k, v := range filterUTXOs(UTXOs) {
+			    txos[k] = v
+			    if len(txos) > UTXO_PER_BLOCK {
+			    	break
+			    }
 			}
-			//in both cases drop it from UTXO
-			Mutex.Lock()
-			UTXOs = append(UTXOs[:i], UTXOs[i+1:]...)
-			Mutex.Unlock()
-			if len(txos) >= UTXO_PER_BLOCK {
-				break
-			}
-		}
-
 		newBlock := generateBlock(Blockchain[len(Blockchain)-1], os.Getenv("SIG"), txos)
 		if isBlockValid(newBlock, Blockchain[len(Blockchain)-1]) {
 			Mutex.Lock()
@@ -122,7 +136,7 @@ func mineNewBlock() {
 	}
 }
 
-func generateBlock(oldBlock Block, signature string, txos []UTXO) Block {
+func generateBlock(oldBlock Block, signature string, txos map[string]*UTXO) Block {
 	var newBlock Block
 	var hash string
 	t := time.Now()
@@ -210,7 +224,7 @@ func readCommand() {
 			to := commands[1]
 			newUTXO := newUTXO(to)
 			Mutex.Lock()
-			UTXOs = append(UTXOs, newUTXO)
+			UTXOs[newUTXO.Id] = &newUTXO
 			Mutex.Unlock()
 			bytes, err := json.MarshalIndent(newUTXO, "", "  ")
 			if err != nil {
@@ -273,7 +287,7 @@ func makeBasicHost(listenPort int, randseed int64) (host.Host, error) {
 		}
 	}
 	fullAddr := addr.Encapsulate(hostAddr)
-	log.Printf("go run main.go -l %d -d %s\n", listenPort+1, fullAddr)
+	fmt.Printf("go run main.go -l %d -d %s\n", listenPort+1, fullAddr)
 	
 	return basicHost, nil
 }
@@ -310,10 +324,10 @@ func receiveBroadcastData(rw *bufio.ReadWriter) {
 				Blockchain = chain
 			}
 
-			//how to update utxs??
-			if len(utxos) > len(UTXOs) {
-				UTXOs = utxos
+			for k, v := range utxos {
+			    UTXOs[k] = v
 			}
+			UTXOs = filterUTXOs(UTXOs)
 			Mutex.Unlock()
 		}
 			
@@ -327,6 +341,7 @@ func broadcastData(rw *bufio.ReadWriter) {
 		time.Sleep(BROADCAST_INTERVAL)
 		
 		Mutex.Lock()
+		UTXOs = filterUTXOs(UTXOs) //add this just to be sure that i'm not broadcasting invalid utxs
 		Data = BroadcastData{Blockchain, UTXOs}
 		bytes, err := json.Marshal(Data)
 		if err != nil {
@@ -348,12 +363,12 @@ func main() {
 		log.Fatal(err)
 	}
 	t := time.Now()
-	var utxos []UTXO
+	utxos := make(map[string]*UTXO)
 	genesisBlock := Block{}
 	genesisBlock = Block{0, t.String(), os.Getenv("SIG"), getBlockHash(genesisBlock), "", POW_DIFFICULTY, "", utxos}
 
 	Blockchain = append(Blockchain, genesisBlock)
-	UTXOs = make([]UTXO, 0)
+	UTXOs = make(map[string]*UTXO, 0)
 
 	// LibP2P code uses golog to log messages. They log with different
 	// string IDs (i.e. "swarm"). We can control the verbosity level for
