@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"strconv"
 	"strings"
+	"math/rand"
 	)
 
 type Block struct {
@@ -15,9 +16,10 @@ type Block struct {
 	Signature   string
 	Hash      	string
 	PrevHash  	string
-	Difficulty	int
 	Nonce 		string
 	Txos		map[string]*UTXO
+	Problem		int
+	Solution	int
 }
 
 func getBlockHash(block Block) string {
@@ -33,6 +35,27 @@ func isPoWValid(hash string, difficulty int) bool {
 	return strings.HasPrefix(hash, prefix)
 }
 
+func hasValidSolution(newBlock Block, bestSolution int) bool {
+	if newBlock.Solution < bestSolution {
+		return true
+	}
+	return false
+}
+
+func findBestSolution() int {
+	bsol := 10
+	var sol int
+	var block Block
+	for i := len(Blockchain) - 1; i >= 0; i-- {
+	    block = Blockchain[i]
+	    sol = block.Solution
+	    if sol < bsol {
+	    	bsol = sol
+	    }
+	}
+	return bsol
+}
+
 func generateBlock(oldBlock Block, signature string, txos map[string]*UTXO) Block {
 	var newBlock Block
 	var hash string
@@ -42,23 +65,44 @@ func generateBlock(oldBlock Block, signature string, txos map[string]*UTXO) Bloc
 	newBlock.Timestamp = t.String()
 	newBlock.Signature = signature
 	newBlock.PrevHash = oldBlock.Hash
-	newBlock.Difficulty = POW_DIFFICULTY
+	newBlock.Problem = 10
+	bestSolution := findBestSolution()
+	
+	newBlock.Solution = bestSolution + rand.Intn(4) - 2
 	newBlock.Txos = txos
 	//add code to add utxos and check their validity
-	for i := 0; ; i++ {
-		hex := fmt.Sprintf("%x", i)
-		newBlock.Nonce = hex
-		hash = getBlockHash(newBlock)
-		if isPoWValid(hash, newBlock.Difficulty) {
-		    newBlock.Hash = hash
-		    //spew.Dump(newBlock)
-		    break
-		} else {
-			//fmt.Println(getBlockHash(newBlock))
-			time.Sleep(25 * time.Millisecond)
-			continue		        
+	if hasValidSolution(newBlock, bestSolution) {
+		for i := 0; ; i++ {
+			hex := fmt.Sprintf("%x", i)
+			newBlock.Nonce = hex
+			hash = getBlockHash(newBlock)
+			if isPoWValid(hash, POWS_DIFFICULTY) {
+			    newBlock.Hash = hash
+			    //spew.Dump(newBlock)
+			    break
+			} else {
+				//fmt.Println(getBlockHash(newBlock))
+				time.Sleep(MINING_INTERVAL)
+				continue		        
+			}
 		}
+	} else {
+		for i := 0; ; i++ {
+			hex := fmt.Sprintf("%x", i)
+			newBlock.Nonce = hex
+			hash = getBlockHash(newBlock)
+			if isPoWValid(hash, POW_DIFFICULTY) {
+			    newBlock.Hash = hash
+			    //spew.Dump(newBlock)
+			    break
+			} else {
+				//fmt.Println(getBlockHash(newBlock))
+				time.Sleep(25 * time.Millisecond)
+				continue		        
+			}
+		}	
 	}
+	
 
 	return newBlock
 }
@@ -76,9 +120,14 @@ func isBlockValid(newBlock, oldBlock Block) bool {
 		return false
 	}
 	//check difficulty
-	if !isPoWValid(hash, newBlock.Difficulty) {
-		return false
-	}
+	bestSolution := findBestSolution()
+	if hasValidSolution(newBlock, bestSolution) {
+		if !isPoWValid(hash, POWS_DIFFICULTY) {
+			return false
+		} 
+	} else if !isPoWValid(hash, POW_DIFFICULTY) {
+				return false
+	}	
 	//check validity of utxos
 	return true
 }

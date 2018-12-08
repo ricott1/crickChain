@@ -24,9 +24,10 @@ type BroadcastData struct {
 	UTXOs 		map[string]*UTXO
 }
 
-const POW_DIFFICULTY = 1
+const POW_DIFFICULTY = 2
+const POWS_DIFFICULTY = 1
 const BROADCAST_INTERVAL = 5 * time.Second
-const MINING_INTERVAL = 5 * time.Second
+const MINING_INTERVAL = 1 * time.Millisecond
 const UTXO_PER_BLOCK = 5
 
 var Blockchain []Block
@@ -35,6 +36,7 @@ var UTXOs map[string]*UTXO //notice the *, meaning that this is a map of pointer
 var Data BroadcastData
 var Wallets map[string]*Wallet
 var Mutex =&sync.Mutex{}
+
 
 func mineNewBlock() {
 	for {
@@ -53,11 +55,12 @@ func mineNewBlock() {
 		if isBlockValid(newBlock, Blockchain[len(Blockchain)-1]) {
 			Mutex.Lock()
 			Blockchain = append(Blockchain, newBlock)
+			//reward := newUTXO(Wallets[myAddress])
+			//UTXOs = append(UTXOs, reward)
 			Mutex.Unlock()
 		}
 	}
 }
-
 
 func printCommand(bytes []byte) {
 	// Green console color: 	\x1b[32m
@@ -128,9 +131,14 @@ func main() {
 	t := time.Now()
 	utxos := make(map[string]*UTXO)
 	genesisBlock := Block{}
-	genesisBlock = Block{0, t.String(), os.Getenv("SIG"), getBlockHash(genesisBlock), "", POW_DIFFICULTY, "", utxos}
+	genesisBlock = Block{0, t.String(), os.Getenv("SIG"), getBlockHash(genesisBlock), "", "", utxos, 10, 10}
 	Blockchain = append(Blockchain, genesisBlock)
 	UTXOs = make(map[string]*UTXO, 0)
+	Wallets = make(map[string]*Wallet, 0)
+
+	wallet := newWallet("Gattaka")
+	//fmt.Println(wallet.Address, wallet.PublicKey)
+	Wallets[wallet.PublicKey] = &wallet
 
 	// LibP2P code uses golog to log messages. They log with different
 	// string IDs (i.e. "swarm"). We can control the verbosity level for
@@ -149,7 +157,6 @@ func main() {
 	miner := flag.Bool("m", false, "set node as miner")
 	flag.Parse()
 
-	fmt.Println(*seed)
 	// Make a host that listens on the given multiaddress
 	host, err := makeBasicHost(*listenF, *seed)
 	if err != nil {

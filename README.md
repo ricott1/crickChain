@@ -9,7 +9,7 @@ The problem is retrieved from the IPFS. Each block contains a problem reference 
 ```
 go get github.com/joho/godotenv
 go get github.com/davecgh/go-spew/spew
-go get github.com/ipfs/go-log"
+go get github.com/ipfs/go-log
 go get github.com/whyrusleeping/go-logging
 go get github.com/libp2p/go-libp2p
 go get github.com/libp2p/go-libp2p-crypto
@@ -18,6 +18,10 @@ go get github.com/libp2p/go-libp2p-net
 go get github.com/libp2p/go-libp2p-peer
 go get github.com/libp2p/go-libp2p-peerstore
 go get github.com/multiformats/go-multiaddr
+go get github.com/btcsuite/btcd/btcec
+go get github.com/btcsuite/btcd/chaincfg
+go get github.com/btcsuite/btcutil
+go get github.com/btcsuite/btclog
 ```
 
 ## Run
