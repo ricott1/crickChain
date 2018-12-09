@@ -24,11 +24,17 @@ type BroadcastData struct {
 	UTXOs 		map[string]*UTXO
 }
 
-const POW_DIFFICULTY = 2
-const POWS_DIFFICULTY = 1
-const BROADCAST_INTERVAL = 5 * time.Second
-const MINING_INTERVAL = 1 * time.Millisecond
+const POW_DIFFICULTY int64 = 2
+const POWS_DIFFICULTY int64 = 1
+const BROADCAST_INTERVAL = 1 * time.Second
+const MINING_INTERVAL = 10 * time.Millisecond
 const UTXO_PER_BLOCK = 5
+const BLOCKS_PER_DIFFICULTY_UPDATE int64 = 16
+const BLOCKS_PER_MINUTE int64 = 30
+const NANOSECONDS_PER_MINUTE int64 = 1000000000 * 60
+const MAX_DIFFICULTY_CHANGE float64 = 3
+const MIN_DIFFICULTY_CHANGE float64 = 1/MAX_DIFFICULTY_CHANGE
+const ETA float64 = 0.5
 
 var Blockchain []Block
 //this is wrong. The UTXOs should represent basically the money in the system, not the proposed txs. Or better, when someone submits a tansaction, if valid (i.e. if money present in UTXOs) it just update the UTXOs
@@ -36,6 +42,7 @@ var UTXOs map[string]*UTXO //notice the *, meaning that this is a map of pointer
 var Data BroadcastData
 var Wallets map[string]*Wallet
 var Mutex =&sync.Mutex{}
+var connectCommand string
 
 
 func mineNewBlock() {
@@ -52,7 +59,7 @@ func mineNewBlock() {
 			    }
 			}
 		newBlock := generateBlock(Blockchain[len(Blockchain)-1], os.Getenv("SIG"), txos)
-		if isBlockValid(newBlock, Blockchain[len(Blockchain)-1]) {
+		if isBlockValid(Blockchain, newBlock, Blockchain[len(Blockchain)-1]) {
 			Mutex.Lock()
 			Blockchain = append(Blockchain, newBlock)
 			//reward := newUTXO(Wallets[myAddress])
@@ -66,6 +73,13 @@ func printCommand(bytes []byte) {
 	// Green console color: 	\x1b[32m
 	// Reset console color: 	\x1b[0m
 	fmt.Printf("\x1b[32m%s\x1b[0m ", string(bytes))
+}
+
+
+func getCurrentDifficulties() string {
+	pow := getPOWDifficulty(Blockchain, len(Blockchain))
+	pows := getPOWSDifficulty(Blockchain, len(Blockchain))
+	return fmt.Sprintf("POW = %d   POWS = %d", pow, pows)
 }
 
 //this function reads command from command line, as print Blockchain, unverified transactions and send transaction
@@ -108,9 +122,35 @@ func readCommand() {
 			} else{
 				printCommand(bytes)
 			}
+		} else if command == "d" {
+			diffs := getCurrentDifficulties()
+			bytes, err := json.MarshalIndent(diffs, "", "  ")
+			if err != nil {
+				log.Println(err)
+			} else{
+				printCommand(bytes)
+			}
+		} else if command == "cc" {
+			bytes, err := json.MarshalIndent(connectCommand, "", "  ")
+			if err != nil {
+				log.Println(err)
+			} else{
+				printCommand(bytes)
+			}
+		}else if command == "bs" {
+			best := fmt.Sprintf("Best = %d", findBestSolution(Blockchain, Blockchain[len(Blockchain) - 1].Index))
+			bytes, err := json.MarshalIndent(best, "", "  ")
+			if err != nil {
+				log.Println(err)
+			} else{
+				printCommand(bytes)
+			}
 		} else if command == "h" {
 			fmt.Printf(`
 bc : Display Blockchain
+bs : Display best solution
+d  : Display current difficulties
+cc : Display the connection address
 ut : Display unverified transaction outputs (UTXOs)
 nut : Create new UTXO
 h  : Display this helper
@@ -123,15 +163,17 @@ q  : Quit`)
 	}
 }
 
+
+
 func main() {
 	err := godotenv.Load()
 	if err != nil {
 		log.Fatal(err)
 	}
-	t := time.Now()
+	t := time.Now().UnixNano()
 	utxos := make(map[string]*UTXO)
 	genesisBlock := Block{}
-	genesisBlock = Block{0, t.String(), os.Getenv("SIG"), getBlockHash(genesisBlock), "", "", utxos, 10, 10}
+	genesisBlock = Block{0, t, POW_DIFFICULTY, POWS_DIFFICULTY, os.Getenv("SIG"), getBlockHash(genesisBlock), "", "", utxos, 10, 10, false}
 	Blockchain = append(Blockchain, genesisBlock)
 	UTXOs = make(map[string]*UTXO, 0)
 	Wallets = make(map[string]*Wallet, 0)

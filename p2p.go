@@ -61,6 +61,7 @@ func makeBasicHost(listenPort int, randseed int64) (host.Host, error) {
 		}
 	}
 	fullAddr := addr.Encapsulate(hostAddr)
+	connectCommand = fmt.Sprintf("go run *.go -l %d -d %s -m true", listenPort+1, fullAddr)
 	fmt.Printf("go run *.go -l %d -d %s\n", listenPort+1, fullAddr)
 	
 	return basicHost, nil
@@ -95,7 +96,9 @@ func receiveBroadcastData(rw *bufio.ReadWriter) {
 			chain := data.Blockchain
 			utxos := data.UTXOs
 			if len(chain) > len(Blockchain) {
-				Blockchain = chain
+				if isBlockchainValid(chain) {
+					Blockchain = chain
+				}
 			}
 
 			for k, v := range utxos {

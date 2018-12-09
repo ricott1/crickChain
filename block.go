@@ -8,30 +8,34 @@ import (
 	"strconv"
 	"strings"
 	"math/rand"
+	"math"
 	)
 
 type Block struct {
-	Index     	int
-	Timestamp 	string
-	Signature   string
-	Hash      	string
-	PrevHash  	string
-	Nonce 		string
-	Txos		map[string]*UTXO
-	Problem		int
-	Solution	int
+	Index     		int
+	Timestamp 		int64
+	POW_difficulty 	int64
+	POWS_difficulty int64
+	Signature   	string
+	Hash      		string
+	PrevHash  		string
+	Nonce 			string
+	Txos			map[string]*UTXO
+	Problem			int
+	Solution		int
+	HasSolution 	bool
 }
 
 func getBlockHash(block Block) string {
-	record := strconv.Itoa(block.Index) + block.Timestamp + block.Signature + block.PrevHash + block.Nonce //add utxos to be hashed (merkle root?)
+	record := strconv.Itoa(block.Index) + strconv.FormatInt(block.Timestamp, 10) + block.Signature + block.PrevHash + block.Nonce //add utxos to be hashed (merkle root?)
 	h := sha256.New()
 	h.Write([]byte(record))
 	hashed := h.Sum(nil)
 	return hex.EncodeToString(hashed)
 }
 
-func isPoWValid(hash string, difficulty int) bool {
-	prefix := strings.Repeat("0", difficulty)
+func isPoWValid(hash string, difficulty int64) bool {
+	prefix := strings.Repeat("0", int(difficulty))
 	return strings.HasPrefix(hash, prefix)
 }
 
@@ -42,12 +46,12 @@ func hasValidSolution(newBlock Block, bestSolution int) bool {
 	return false
 }
 
-func findBestSolution() int {
+func findBestSolution(chain []Block, index int) int {
 	bsol := 10
 	var sol int
 	var block Block
-	for i := len(Blockchain) - 1; i >= 0; i-- {
-	    block = Blockchain[i]
+	for i := 0; i < index; i++ {
+	    block = chain[i]
 	    sol = block.Solution
 	    if sol < bsol {
 	    	bsol = sol
@@ -56,58 +60,99 @@ func findBestSolution() int {
 	return bsol
 }
 
+func isBlockchainValid(chain []Block) bool {
+	for i := len(chain) - 1; i > 0; i-- {
+	    if !isBlockValid(chain, chain[i], chain[i-1]) {
+	    	fmt.Println("Wrong", i)
+	    	return false
+	    }
+	}
+	return true
+}
+
+func getPOWDifficulty(chain []Block, index int) int64 {
+	difficulty := POW_DIFFICULTY
+	start := chain[0].Timestamp
+	var stop int64
+	var duration int64
+	var change float64
+	for i := 1; i < index; i++ {
+	    if int64(i)%BLOCKS_PER_DIFFICULTY_UPDATE == 0 {
+	    	stop = chain[i].Timestamp
+	    	duration = stop - start
+	    	change = math.Max(MAX_DIFFICULTY_CHANGE, math.Min(MIN_DIFFICULTY_CHANGE, float64(BLOCKS_PER_DIFFICULTY_UPDATE * NANOSECONDS_PER_MINUTE / BLOCKS_PER_MINUTE / duration)))
+	    	difficulty = int64(float64(difficulty) * change)
+	    	start = stop
+	    }
+	}
+	return difficulty
+}
+
+func getPOWSDifficulty(chain []Block, index int) int64 {
+	difficulty := POWS_DIFFICULTY
+	start := chain[0].Timestamp
+	var stop int64
+	var duration int64
+
+	var change float64
+	for i := 1; i < index; i++ {
+	    if int64(i)%BLOCKS_PER_DIFFICULTY_UPDATE == 0 {
+	    	stop = chain[i].Timestamp
+	    	duration = stop - start
+	    	change = math.Max(MAX_DIFFICULTY_CHANGE, math.Min(MIN_DIFFICULTY_CHANGE, float64(BLOCKS_PER_DIFFICULTY_UPDATE * NANOSECONDS_PER_MINUTE / BLOCKS_PER_MINUTE / duration)))
+	    	difficulty = int64(float64(difficulty) * change)
+	    	start = stop
+	    }
+	}
+	return difficulty
+}
+
 func generateBlock(oldBlock Block, signature string, txos map[string]*UTXO) Block {
 	var newBlock Block
 	var hash string
-	t := time.Now()
-
 	newBlock.Index = oldBlock.Index + 1
-	newBlock.Timestamp = t.String()
+	
+	newBlock.POW_difficulty = getPOWDifficulty(Blockchain, newBlock.Index)
+	newBlock.POWS_difficulty = getPOWSDifficulty(Blockchain, newBlock.Index)
 	newBlock.Signature = signature
 	newBlock.PrevHash = oldBlock.Hash
 	newBlock.Problem = 10
-	bestSolution := findBestSolution()
+	bestSolution := findBestSolution(Blockchain, newBlock.Index)
+	t := time.Now().UnixNano()
+	newBlock.Timestamp = t
 	
-	newBlock.Solution = bestSolution + rand.Intn(4) - 2
+	
 	newBlock.Txos = txos
 	//add code to add utxos and check their validity
-	if hasValidSolution(newBlock, bestSolution) {
-		for i := 0; ; i++ {
-			hex := fmt.Sprintf("%x", i)
-			newBlock.Nonce = hex
-			hash = getBlockHash(newBlock)
-			if isPoWValid(hash, POWS_DIFFICULTY) {
-			    newBlock.Hash = hash
-			    //spew.Dump(newBlock)
-			    break
-			} else {
-				//fmt.Println(getBlockHash(newBlock))
-				time.Sleep(MINING_INTERVAL)
-				continue		        
-			}
+	var diff int64
+	for i := 0; ; i++ {
+		newBlock.Solution = bestSolution + rand.Intn(4) - 2
+		hex := fmt.Sprintf("%x", i)
+		newBlock.Nonce = hex
+		hash = getBlockHash(newBlock)
+		if hasValidSolution(newBlock, bestSolution) { 
+			diff = newBlock.POWS_difficulty
+			newBlock.HasSolution = true
+		} else {
+			diff = newBlock.POW_difficulty
+			newBlock.HasSolution = false
 		}
-	} else {
-		for i := 0; ; i++ {
-			hex := fmt.Sprintf("%x", i)
-			newBlock.Nonce = hex
-			hash = getBlockHash(newBlock)
-			if isPoWValid(hash, POW_DIFFICULTY) {
-			    newBlock.Hash = hash
-			    //spew.Dump(newBlock)
-			    break
-			} else {
-				//fmt.Println(getBlockHash(newBlock))
-				time.Sleep(25 * time.Millisecond)
-				continue		        
-			}
-		}	
+		
+		if isPoWValid(hash, diff) {
+		    newBlock.Hash = hash
+		    //spew.Dump(newBlock)
+		    break
+		} else {
+			//fmt.Println(getBlockHash(newBlock))
+			time.Sleep(MINING_INTERVAL)
+			continue		        
+		}
 	}
-	
 
 	return newBlock
 }
 
-func isBlockValid(newBlock, oldBlock Block) bool {
+func isBlockValid(chain []Block, newBlock Block, oldBlock Block) bool {
 	if oldBlock.Index + 1 != newBlock.Index {
 		return false
 	}
@@ -119,14 +164,28 @@ func isBlockValid(newBlock, oldBlock Block) bool {
 	if hash != newBlock.Hash {
 		return false
 	}
-	//check difficulty
-	bestSolution := findBestSolution()
+	// //check difficulty
+	pows_difficulty := getPOWSDifficulty(chain, newBlock.Index)
+	pow_difficulty := getPOWDifficulty(chain, newBlock.Index)
+	if newBlock.POWS_difficulty != pows_difficulty {
+		fmt.Println("Failed pows check", newBlock.POWS_difficulty, pows_difficulty)
+		return false
+	}
+	if newBlock.POW_difficulty != pow_difficulty {
+		fmt.Println("Failed pow check", newBlock.POW_difficulty, pow_difficulty)
+		return false
+	}
+	bestSolution := findBestSolution(chain, newBlock.Index)
 	if hasValidSolution(newBlock, bestSolution) {
-		if !isPoWValid(hash, POWS_DIFFICULTY) {
+		if !isPoWValid(hash, pows_difficulty) {
+			fmt.Println("Failed pows valid check", hash, pows_difficulty)
 			return false
 		} 
-	} else if !isPoWValid(hash, POW_DIFFICULTY) {
-				return false
+	} else {
+		if !isPoWValid(hash, pow_difficulty) {
+			fmt.Println("Failed pow valid check", hash, pow_difficulty)
+			return false
+		}
 	}	
 	//check validity of utxos
 	return true
