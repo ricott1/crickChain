@@ -70,50 +70,101 @@ func isBlockchainValid(chain []Block) bool {
 	return true
 }
 
-func getPOWDifficulty(chain []Block, index int) int64 {
-	difficulty := POW_DIFFICULTY
+func getDifficulties(chain []Block, index int) (int64, int64) {
+	pow_difficulty := float64(POW_DIFFICULTY)
+	pows_difficulty := float64(POWS_DIFFICULTY)
 	start := chain[0].Timestamp
 	var stop int64
 	var duration int64
 	var change float64
+	//var ratio float64
+	//var eta float64
+	//var timestampSolution int64
+	//var timestampClassic int64
 	for i := 1; i < index; i++ {
 	    if int64(i)%BLOCKS_PER_DIFFICULTY_UPDATE == 0 {
 	    	stop = chain[i].Timestamp
 	    	duration = stop - start
-	    	change = math.Max(MAX_DIFFICULTY_CHANGE, math.Min(MIN_DIFFICULTY_CHANGE, float64(BLOCKS_PER_DIFFICULTY_UPDATE * NANOSECONDS_PER_MINUTE / BLOCKS_PER_MINUTE / duration)))
-	    	difficulty = int64(float64(difficulty) * change)
+	    	change = math.Max(MAX_DIFFICULTY_CHANGE, math.Min(MIN_DIFFICULTY_CHANGE, float64(BLOCKS_PER_DIFFICULTY_UPDATE) * NANOSECONDS_PER_MINUTE / BLOCKS_PER_MINUTE / float64(duration)))
+	    	pow_difficulty = pow_difficulty * change
+	    	pows_difficulty = pows_difficulty * change
+
+//new stuff
+    //    	ratio = getBlocksWithSolution(chain, index)
+	// 		eta = float64(timestampSolution)/float64(timestampClassic)
+	// 		change = (b + (1-b)*eta)/(b + (1-b)*ETA)
+	// 		pow_difficulty = pow_difficulty + change
+	//		pows_difficulty = pows_difficulty + ETA * pow_difficulty - eta * (pow_difficulty - change)
 	    	start = stop
 	    }
 	}
-	return difficulty
+	return int64(math.Round(pow_difficulty)), int64(math.Round(pows_difficulty))
 }
 
-func getPOWSDifficulty(chain []Block, index int) int64 {
-	difficulty := POWS_DIFFICULTY
-	start := chain[0].Timestamp
-	var stop int64
-	var duration int64
+// func getPOWDifficulty(chain []Block, index int) int64 {
+// 	difficulty := POW_DIFFICULTY
+// 	start := chain[0].Timestamp
+// 	var stop int64
+// 	var duration int64
+// 	var ratio float64
+// 	var change float64
+// 	var eta float64
+// 	for i := 1; i < index; i++ {
+// 	    if int64(i)%BLOCKS_PER_DIFFICULTY_UPDATE == 0 {
+// 	    	stop = chain[i].Timestamp
+// 	    	duration = stop - start
+// 	    	//change = math.Max(MAX_DIFFICULTY_CHANGE, math.Min(MIN_DIFFICULTY_CHANGE, float64(BLOCKS_PER_DIFFICULTY_UPDATE * NANOSECONDS_PER_MINUTE / BLOCKS_PER_MINUTE / duration)))
+// 	    	//difficulty = int64(float64(difficulty) * change)
+// 	    	ratio = getBlocksWithSolution(chain, index)
+// 		eta = 
+// 		change = (b + (1-b)*eta)/(b + (1-b)*ETA)
+// 		difficulty = difficulty + change
+// 		start = stop
+// 	    }
+// 	}
+// 	return difficulty
+// }
 
-	var change float64
+// func getPOWSDifficulty(chain []Block, index int) int64 {
+// 	difficulty := POWS_DIFFICULTY
+// 	start := chain[0].Timestamp
+// 	var stop int64
+// 	var duration int64
+
+// 	var change float64
+// 	// var T float64 := 
+// 	for i := 1; i < index; i++ {
+// 	    if int64(i)%BLOCKS_PER_DIFFICULTY_UPDATE == 0 {
+// 	    	stop = chain[i].Timestamp
+// 	    	duration = stop - start
+// 	    	change = math.Max(MAX_DIFFICULTY_CHANGE, math.Min(MIN_DIFFICULTY_CHANGE, float64(BLOCKS_PER_DIFFICULTY_UPDATE * NANOSECONDS_PER_MINUTE / BLOCKS_PER_MINUTE / duration)))
+// 	    	difficulty = int64(float64(difficulty) * change)
+// 	    	start = stop
+// 	    }
+// 	}
+// 	return difficulty
+// }
+
+func getBlocksWithSolutionRatio(chain []Block, index int) float64 {
+	var r float64 = 0
 	for i := 1; i < index; i++ {
-	    if int64(i)%BLOCKS_PER_DIFFICULTY_UPDATE == 0 {
-	    	stop = chain[i].Timestamp
-	    	duration = stop - start
-	    	change = math.Max(MAX_DIFFICULTY_CHANGE, math.Min(MIN_DIFFICULTY_CHANGE, float64(BLOCKS_PER_DIFFICULTY_UPDATE * NANOSECONDS_PER_MINUTE / BLOCKS_PER_MINUTE / duration)))
-	    	difficulty = int64(float64(difficulty) * change)
-	    	start = stop
-	    }
+		if chain[i].HasSolution {
+			r ++
+		}	    
 	}
-	return difficulty
+	return r/(float64(index+1))
 }
+
+func getBlocksWithSolutionDuration(chain []Block, index int) int64 
 
 func generateBlock(oldBlock Block, signature string, txos map[string]*UTXO) Block {
 	var newBlock Block
 	var hash string
 	newBlock.Index = oldBlock.Index + 1
 	
-	newBlock.POW_difficulty = getPOWDifficulty(Blockchain, newBlock.Index)
-	newBlock.POWS_difficulty = getPOWSDifficulty(Blockchain, newBlock.Index)
+	// newBlock.POW_difficulty = getPOWDifficulty(Blockchain, newBlock.Index)
+	// newBlock.POWS_difficulty = getPOWSDifficulty(Blockchain, newBlock.Index)
+	newBlock.POW_difficulty, newBlock.POWS_difficulty = getDifficulties(Blockchain, newBlock.Index)
 	newBlock.Signature = signature
 	newBlock.PrevHash = oldBlock.Hash
 	newBlock.Problem = 10
@@ -165,8 +216,10 @@ func isBlockValid(chain []Block, newBlock Block, oldBlock Block) bool {
 		return false
 	}
 	// //check difficulty
-	pows_difficulty := getPOWSDifficulty(chain, newBlock.Index)
-	pow_difficulty := getPOWDifficulty(chain, newBlock.Index)
+	// pows_difficulty := getPOWSDifficulty(chain, newBlock.Index)
+	// pow_difficulty := getPOWDifficulty(chain, newBlock.Index)
+	pow_difficulty, pows_difficulty := getDifficulties(Blockchain, len(Blockchain))
+
 	if newBlock.POWS_difficulty != pows_difficulty {
 		fmt.Println("Failed pows check", newBlock.POWS_difficulty, pows_difficulty)
 		return false

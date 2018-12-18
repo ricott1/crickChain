@@ -30,8 +30,8 @@ const BROADCAST_INTERVAL = 1 * time.Second
 const MINING_INTERVAL = 10 * time.Millisecond
 const UTXO_PER_BLOCK = 5
 const BLOCKS_PER_DIFFICULTY_UPDATE int64 = 16
-const BLOCKS_PER_MINUTE int64 = 30
-const NANOSECONDS_PER_MINUTE int64 = 1000000000 * 60
+const BLOCKS_PER_MINUTE float64 = 30
+const NANOSECONDS_PER_MINUTE float64 = 1000000000 * 60
 const MAX_DIFFICULTY_CHANGE float64 = 3
 const MIN_DIFFICULTY_CHANGE float64 = 1/MAX_DIFFICULTY_CHANGE
 const ETA float64 = 0.5
@@ -77,8 +77,7 @@ func printCommand(bytes []byte) {
 
 
 func getCurrentDifficulties() string {
-	pow := getPOWDifficulty(Blockchain, len(Blockchain))
-	pows := getPOWSDifficulty(Blockchain, len(Blockchain))
+	pow, pows := getDifficulties(Blockchain, len(Blockchain))
 	return fmt.Sprintf("POW = %d   POWS = %d", pow, pows)
 }
 
