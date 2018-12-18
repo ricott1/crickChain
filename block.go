@@ -155,7 +155,9 @@ func getBlocksWithSolutionRatio(chain []Block, index int) float64 {
 	return r/(float64(index+1))
 }
 
-func getBlocksWithSolutionDuration(chain []Block, index int) int64 
+func getBlocksWithSolutionDuration(chain []Block, index int) int64 {
+	
+}
 
 func generateBlock(oldBlock Block, signature string, txos map[string]*UTXO) Block {
 	var newBlock Block
