@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 	"sync"
+	"encoding/binary"
 	//"reflect"
 
 	"github.com/joho/godotenv"
@@ -24,15 +25,16 @@ type BroadcastData struct {
 	UTXOs 		map[string]*UTXO
 }
 
-const POW_DIFFICULTY int64 = 2
-const POWS_DIFFICULTY int64 = 1
+const POW_DIFFICULTY int = 10
+const POWS_DIFFICULTY int = 8
+const MIN_DIFFICULTY int64 = 32
 const BROADCAST_INTERVAL = 1 * time.Second
-const MINING_INTERVAL = 10 * time.Millisecond
+const MINING_INTERVAL = 6 * time.Millisecond
 const UTXO_PER_BLOCK = 5
 const BLOCKS_PER_DIFFICULTY_UPDATE int64 = 16
 const BLOCKS_PER_MINUTE float64 = 30
 const NANOSECONDS_PER_MINUTE float64 = 1000000000 * 60
-const MAX_DIFFICULTY_CHANGE float64 = 3
+const MAX_DIFFICULTY_CHANGE float64 = 4
 const MIN_DIFFICULTY_CHANGE float64 = 1/MAX_DIFFICULTY_CHANGE
 const ETA float64 = 0.5
 
@@ -47,7 +49,7 @@ var connectCommand string
 
 func mineNewBlock() {
 	for {
-		time.Sleep(MINING_INTERVAL)
+		//time.Sleep(MINING_INTERVAL)
 		//take the UTXO, filter them to be sure, and collect the first UTXO_PER_BLOCK into the block. One could instead order them to include those with higeher fees first.
 		txos := make(map[string]*UTXO)
 		//log.Println(UTXOs)
@@ -172,7 +174,10 @@ func main() {
 	t := time.Now().UnixNano()
 	utxos := make(map[string]*UTXO)
 	genesisBlock := Block{}
-	genesisBlock = Block{0, t, POW_DIFFICULTY, POWS_DIFFICULTY, os.Getenv("SIG"), getBlockHash(genesisBlock), "", "", utxos, 10, 10, false}
+	gen_hash := getBlockHash(genesisBlock)
+	gen_prev_hash := make([]byte, 32)
+	gen_sum := binary.BigEndian.Uint32(gen_hash)
+	genesisBlock = Block{0, t, POW_DIFFICULTY, POWS_DIFFICULTY, os.Getenv("SIG"), gen_hash, gen_sum, gen_prev_hash, "", utxos, 10, 10, false}
 	Blockchain = append(Blockchain, genesisBlock)
 	UTXOs = make(map[string]*UTXO, 0)
 	Wallets = make(map[string]*Wallet, 0)

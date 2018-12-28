@@ -4,21 +4,22 @@ import (
 	"fmt"
 	"time"
 	"crypto/sha256"
-	"encoding/hex"
 	"strconv"
-	"strings"
 	"math/rand"
+	"math/bits"
 	"math"
+	"encoding/binary"
 	)
 
 type Block struct {
 	Index     		int
 	Timestamp 		int64
-	POW_difficulty 	int64
-	POWS_difficulty int64
+	POW_difficulty 	int
+	POWS_difficulty int
 	Signature   	string
-	Hash      		string
-	PrevHash  		string
+	Hash      		[]byte
+	HashInt32		uint32
+	PrevHash  		[]byte
 	Nonce 			string
 	Txos			map[string]*UTXO
 	Problem			int
@@ -26,17 +27,17 @@ type Block struct {
 	HasSolution 	bool
 }
 
-func getBlockHash(block Block) string {
-	record := strconv.Itoa(block.Index) + strconv.FormatInt(block.Timestamp, 10) + block.Signature + block.PrevHash + block.Nonce //add utxos to be hashed (merkle root?)
+func getBlockHash(block Block) []byte {
+	record := strconv.Itoa(block.Index) + strconv.FormatInt(block.Timestamp, 10) + block.Signature + string(block.PrevHash) + block.Nonce //add utxos to be hashed (merkle root?)
 	h := sha256.New()
 	h.Write([]byte(record))
 	hashed := h.Sum(nil)
-	return hex.EncodeToString(hashed)
+	return hashed[:] //hex.EncodeToString(hashed)
 }
 
-func isPoWValid(hash string, difficulty int64) bool {
-	prefix := strings.Repeat("0", int(difficulty))
-	return strings.HasPrefix(hash, prefix)
+func isHashValid(hash []byte, difficulty int) bool {
+	source_uint := binary.BigEndian.Uint32(hash)
+	return bits.LeadingZeros32(source_uint) >= difficulty
 }
 
 func hasValidSolution(newBlock Block, bestSolution int) bool {
@@ -70,98 +71,75 @@ func isBlockchainValid(chain []Block) bool {
 	return true
 }
 
-func getDifficulties(chain []Block, index int) (int64, int64) {
+func getDifficulties(chain []Block, index int) (int, int) {
 	pow_difficulty := float64(POW_DIFFICULTY)
 	pows_difficulty := float64(POWS_DIFFICULTY)
-	start := chain[0].Timestamp
-	var stop int64
-	var duration int64
+	//start := chain[0].Timestamp
+	//var stop int64
+	//var duration int64
 	var change float64
-	//var ratio float64
-	//var eta float64
-	//var timestampSolution int64
-	//var timestampClassic int64
+	var ratio float64
+	var eta float64
+	var timestampSolution int64
+	var timestampClassic int64
+	var base_pow_difficulty float64
+	var base_pows_difficulty float64
 	for i := 1; i < index; i++ {
 	    if int64(i)%BLOCKS_PER_DIFFICULTY_UPDATE == 0 {
-	    	stop = chain[i].Timestamp
-	    	duration = stop - start
-	    	change = math.Max(MAX_DIFFICULTY_CHANGE, math.Min(MIN_DIFFICULTY_CHANGE, float64(BLOCKS_PER_DIFFICULTY_UPDATE) * NANOSECONDS_PER_MINUTE / BLOCKS_PER_MINUTE / float64(duration)))
-	    	pow_difficulty = pow_difficulty * change
-	    	pows_difficulty = pows_difficulty * change
+	       	ratio = getClassicBlocksRatio(chain, index)
 
-//new stuff
-    //    	ratio = getBlocksWithSolution(chain, index)
-	// 		eta = float64(timestampSolution)/float64(timestampClassic)
-	// 		change = (b + (1-b)*eta)/(b + (1-b)*ETA)
-	// 		pow_difficulty = pow_difficulty + change
-	//		pows_difficulty = pows_difficulty + ETA * pow_difficulty - eta * (pow_difficulty - change)
-	    	start = stop
+	       	timestampSolution = getSolutionBlocksDuration(chain, index)
+	       	timestampClassic = getClassicBlocksDuration(chain, index)
+			eta = float64(timestampSolution)/float64(timestampClassic)
+			change = (ratio + (1.0-ratio)*eta)/(ratio + (1.0-ratio)*ETA)
+
+			base_pow_difficulty = pow_difficulty
+			base_pows_difficulty = pows_difficulty
+			pow_difficulty = pow_difficulty * change
+			pows_difficulty = pows_difficulty + ETA * pow_difficulty - eta * (pow_difficulty - change)
+			
+			//enforce difficulty update limits
+			pow_difficulty = math.Max(MAX_DIFFICULTY_CHANGE * base_pow_difficulty, math.Min(MIN_DIFFICULTY_CHANGE * base_pow_difficulty, pow_difficulty))
+			pows_difficulty = math.Max(MAX_DIFFICULTY_CHANGE * base_pows_difficulty, math.Min(MIN_DIFFICULTY_CHANGE * base_pows_difficulty, pows_difficulty))
+			
 	    }
 	}
-	return int64(math.Round(pow_difficulty)), int64(math.Round(pows_difficulty))
+	return int(math.Round(pow_difficulty)), int(math.Round(pows_difficulty))
 }
 
-// func getPOWDifficulty(chain []Block, index int) int64 {
-// 	difficulty := POW_DIFFICULTY
-// 	start := chain[0].Timestamp
-// 	var stop int64
-// 	var duration int64
-// 	var ratio float64
-// 	var change float64
-// 	var eta float64
-// 	for i := 1; i < index; i++ {
-// 	    if int64(i)%BLOCKS_PER_DIFFICULTY_UPDATE == 0 {
-// 	    	stop = chain[i].Timestamp
-// 	    	duration = stop - start
-// 	    	//change = math.Max(MAX_DIFFICULTY_CHANGE, math.Min(MIN_DIFFICULTY_CHANGE, float64(BLOCKS_PER_DIFFICULTY_UPDATE * NANOSECONDS_PER_MINUTE / BLOCKS_PER_MINUTE / duration)))
-// 	    	//difficulty = int64(float64(difficulty) * change)
-// 	    	ratio = getBlocksWithSolution(chain, index)
-// 		eta = 
-// 		change = (b + (1-b)*eta)/(b + (1-b)*ETA)
-// 		difficulty = difficulty + change
-// 		start = stop
-// 	    }
-// 	}
-// 	return difficulty
-// }
-
-// func getPOWSDifficulty(chain []Block, index int) int64 {
-// 	difficulty := POWS_DIFFICULTY
-// 	start := chain[0].Timestamp
-// 	var stop int64
-// 	var duration int64
-
-// 	var change float64
-// 	// var T float64 := 
-// 	for i := 1; i < index; i++ {
-// 	    if int64(i)%BLOCKS_PER_DIFFICULTY_UPDATE == 0 {
-// 	    	stop = chain[i].Timestamp
-// 	    	duration = stop - start
-// 	    	change = math.Max(MAX_DIFFICULTY_CHANGE, math.Min(MIN_DIFFICULTY_CHANGE, float64(BLOCKS_PER_DIFFICULTY_UPDATE * NANOSECONDS_PER_MINUTE / BLOCKS_PER_MINUTE / duration)))
-// 	    	difficulty = int64(float64(difficulty) * change)
-// 	    	start = stop
-// 	    }
-// 	}
-// 	return difficulty
-// }
-
-func getBlocksWithSolutionRatio(chain []Block, index int) float64 {
+func getClassicBlocksRatio(chain []Block, index int) float64 {
 	var r float64 = 0
 	for i := 1; i < index; i++ {
-		if chain[i].HasSolution {
+		if !chain[i].HasSolution {
 			r ++
 		}	    
 	}
 	return r/(float64(index+1))
 }
 
-// func getBlocksWithSolutionDuration(chain []Block, index int) int64 {
-	
-// }
+func getSolutionBlocksDuration(chain []Block, index int) int64 {
+	var t int64 = 0
+	for i := 1; i < index; i++ {
+		if chain[i].HasSolution {
+			t += chain[i].Timestamp - chain[i-1].Timestamp
+		}	    
+	}
+	return t
+}
+
+func getClassicBlocksDuration(chain []Block, index int) int64 {
+	var t int64 = 0
+	for i := 1; i < index; i++ {
+		if !chain[i].HasSolution {
+			t += chain[i].Timestamp - chain[i-1].Timestamp
+		}	    
+	}
+	return t
+}
 
 func generateBlock(oldBlock Block, signature string, txos map[string]*UTXO) Block {
 	var newBlock Block
-	var hash string
+	var hash []byte
 	newBlock.Index = oldBlock.Index + 1
 	
 	// newBlock.POW_difficulty = getPOWDifficulty(Blockchain, newBlock.Index)
@@ -177,7 +155,7 @@ func generateBlock(oldBlock Block, signature string, txos map[string]*UTXO) Bloc
 	
 	newBlock.Txos = txos
 	//add code to add utxos and check their validity
-	var diff int64
+	var diff int
 	for i := 0; ; i++ {
 		newBlock.Solution = bestSolution + rand.Intn(4) - 2
 		hex := fmt.Sprintf("%x", i)
@@ -191,8 +169,9 @@ func generateBlock(oldBlock Block, signature string, txos map[string]*UTXO) Bloc
 			newBlock.HasSolution = false
 		}
 		
-		if isPoWValid(hash, diff) {
+		if isHashValid(hash, diff) {
 		    newBlock.Hash = hash
+		    newBlock.HashInt32 = binary.BigEndian.Uint32(hash)
 		    //spew.Dump(newBlock)
 		    break
 		} else {
@@ -210,17 +189,17 @@ func isBlockValid(chain []Block, newBlock Block, oldBlock Block) bool {
 		return false
 	}
 
-	if oldBlock.Hash != newBlock.PrevHash {
+	if string(oldBlock.Hash) != string(newBlock.PrevHash) {
 		return false
 	}
 	hash := getBlockHash(newBlock)
-	if hash != newBlock.Hash {
+	if string(hash) != string(newBlock.Hash) {
 		return false
 	}
 	// //check difficulty
 	// pows_difficulty := getPOWSDifficulty(chain, newBlock.Index)
 	// pow_difficulty := getPOWDifficulty(chain, newBlock.Index)
-	pow_difficulty, pows_difficulty := getDifficulties(Blockchain, len(Blockchain))
+	pow_difficulty, pows_difficulty := getDifficulties(chain, len(chain))
 
 	if newBlock.POWS_difficulty != pows_difficulty {
 		fmt.Println("Failed pows check", newBlock.POWS_difficulty, pows_difficulty)
@@ -232,12 +211,12 @@ func isBlockValid(chain []Block, newBlock Block, oldBlock Block) bool {
 	}
 	bestSolution := findBestSolution(chain, newBlock.Index)
 	if hasValidSolution(newBlock, bestSolution) {
-		if !isPoWValid(hash, pows_difficulty) {
+		if !isHashValid(hash, pows_difficulty) {
 			fmt.Println("Failed pows valid check", hash, pows_difficulty)
 			return false
 		} 
 	} else {
-		if !isPoWValid(hash, pow_difficulty) {
+		if !isHashValid(hash, pow_difficulty) {
 			fmt.Println("Failed pow valid check", hash, pow_difficulty)
 			return false
 		}
