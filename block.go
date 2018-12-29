@@ -99,12 +99,12 @@ func getDifficulties(chain []Block, index int) (int, int) {
 			pows_difficulty = pows_difficulty + ETA * pow_difficulty - eta * (pow_difficulty - change)
 			
 			//enforce difficulty update limits
-			pow_difficulty = math.Max(MAX_DIFFICULTY_CHANGE * base_pow_difficulty, math.Min(MIN_DIFFICULTY_CHANGE * base_pow_difficulty, pow_difficulty))
-			pows_difficulty = math.Max(MAX_DIFFICULTY_CHANGE * base_pows_difficulty, math.Min(MIN_DIFFICULTY_CHANGE * base_pows_difficulty, pows_difficulty))
+			pow_difficulty = math.Round(math.Max(MAX_DIFFICULTY_CHANGE * base_pow_difficulty, math.Min(MIN_DIFFICULTY_CHANGE * base_pow_difficulty, pow_difficulty)))
+			pows_difficulty = math.Round(math.Max(MAX_DIFFICULTY_CHANGE * base_pows_difficulty, math.Min(MIN_DIFFICULTY_CHANGE * base_pows_difficulty, pows_difficulty)))
 			
 	    }
 	}
-	return int(math.Round(pow_difficulty)), int(math.Round(pows_difficulty))
+	return int(pow_difficulty), int(pows_difficulty)
 }
 
 func getClassicBlocksRatio(chain []Block, index int) float64 {
