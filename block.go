@@ -99,10 +99,19 @@ func getDifficulties(chain []Block, index int) (int, int) {
 			pows_difficulty = pows_difficulty + ETA * pow_difficulty - eta * (pow_difficulty - change)
 			
 			//enforce difficulty update limits
-			pow_difficulty = math.Round(math.Max(MAX_DIFFICULTY_CHANGE * base_pow_difficulty, math.Min(MIN_DIFFICULTY_CHANGE * base_pow_difficulty, pow_difficulty)))
-			pows_difficulty = math.Round(math.Max(MAX_DIFFICULTY_CHANGE * base_pows_difficulty, math.Min(MIN_DIFFICULTY_CHANGE * base_pows_difficulty, pows_difficulty)))
-			
-	    }
+			// pow_difficulty = math.Round(math.Max(MAX_DIFFICULTY_CHANGE * base_pow_difficulty, math.Min(MIN_DIFFICULTY_CHANGE * base_pow_difficulty, pow_difficulty)))
+			// pows_difficulty = math.Round(math.Max(MAX_DIFFICULTY_CHANGE * base_pows_difficulty, math.Min(MIN_DIFFICULTY_CHANGE * base_pows_difficulty, pows_difficulty)))
+			pow_difficulty = math.Round(pow_difficulty)
+			if pow_difficulty > base_pow_difficulty + MAX_DIFFICULTY_CHANGE {
+				pow_difficulty = base_pow_difficulty + MAX_DIFFICULTY_CHANGE
+			} else if pow_difficulty < base_pow_difficulty - MAX_DIFFICULTY_CHANGE {
+				pow_difficulty = math.Max(base_pow_difficulty - MAX_DIFFICULTY_CHANGE, 1)
+			}
+			if pows_difficulty > base_pows_difficulty + MAX_DIFFICULTY_CHANGE {
+				pows_difficulty = base_pows_difficulty + MAX_DIFFICULTY_CHANGE
+			} else if pows_difficulty < base_pows_difficulty - MAX_DIFFICULTY_CHANGE {
+				pows_difficulty = math.Max(base_pows_difficulty - MAX_DIFFICULTY_CHANGE, 1)
+			}	    }
 	}
 	return int(pow_difficulty), int(pows_difficulty)
 }
@@ -199,14 +208,14 @@ func isBlockValid(chain []Block, newBlock Block, oldBlock Block) bool {
 	// //check difficulty
 	// pows_difficulty := getPOWSDifficulty(chain, newBlock.Index)
 	// pow_difficulty := getPOWDifficulty(chain, newBlock.Index)
-	pow_difficulty, pows_difficulty := getDifficulties(chain, len(chain))
+	pow_difficulty, pows_difficulty := getDifficulties(chain, newBlock.Index)
 
 	if newBlock.POWS_difficulty != pows_difficulty {
-		fmt.Println("Failed pows check", newBlock.POWS_difficulty, pows_difficulty)
+		fmt.Println("Failed pows difficulty check", newBlock.POWS_difficulty, pows_difficulty)
 		return false
 	}
 	if newBlock.POW_difficulty != pow_difficulty {
-		fmt.Println("Failed pow check", newBlock.POW_difficulty, pow_difficulty)
+		fmt.Println("Failed pow difficulty check", newBlock.POW_difficulty, pow_difficulty)
 		return false
 	}
 	bestSolution := findBestSolution(chain, newBlock.Index)

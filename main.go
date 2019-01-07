@@ -31,7 +31,7 @@ const MIN_DIFFICULTY int64 = 32
 const BROADCAST_INTERVAL = 1 * time.Second
 const MINING_INTERVAL = 6 * time.Millisecond
 const UTXO_PER_BLOCK = 5
-const BLOCKS_PER_DIFFICULTY_UPDATE int64 = 64
+const BLOCKS_PER_DIFFICULTY_UPDATE int64 = 32
 const BLOCKS_PER_MINUTE float64 = 30
 const NANOSECONDS_PER_MINUTE float64 = 1000000000 * 60
 const MAX_DIFFICULTY_CHANGE float64 = 3
@@ -39,6 +39,7 @@ const MIN_DIFFICULTY_CHANGE float64 = 1/MAX_DIFFICULTY_CHANGE
 const ETA float64 = 0.5
 
 var Blockchain []Block
+var Signature string
 //this is wrong. The UTXOs should represent basically the money in the system, not the proposed txs. Or better, when someone submits a tansaction, if valid (i.e. if money present in UTXOs) it just update the UTXOs
 var UTXOs map[string]*UTXO //notice the *, meaning that this is a map of pointers. To assign we have to prepend & to the value. The map ensures that we don't have duplicates
 var Data BroadcastData
@@ -60,7 +61,7 @@ func mineNewBlock() {
 			    	break
 			    }
 			}
-		newBlock := generateBlock(Blockchain[len(Blockchain)-1], os.Getenv("SIG"), txos)
+		newBlock := generateBlock(Blockchain[len(Blockchain)-1], Signature, txos)
 		if isBlockValid(Blockchain, newBlock, Blockchain[len(Blockchain)-1]) {
 			Mutex.Lock()
 			Blockchain = append(Blockchain, newBlock)
@@ -172,19 +173,7 @@ func main() {
 		log.Fatal(err)
 	}
 	t := time.Now().UnixNano()
-	utxos := make(map[string]*UTXO)
-	genesisBlock := Block{}
-	gen_hash := getBlockHash(genesisBlock)
-	gen_prev_hash := make([]byte, 32)
-	gen_sum := binary.BigEndian.Uint32(gen_hash)
-	genesisBlock = Block{0, t, POW_DIFFICULTY, POWS_DIFFICULTY, os.Getenv("SIG"), gen_hash, gen_sum, gen_prev_hash, "", utxos, 10, 10, false}
-	Blockchain = append(Blockchain, genesisBlock)
-	UTXOs = make(map[string]*UTXO, 0)
-	Wallets = make(map[string]*Wallet, 0)
 
-	wallet := newWallet("Gattaka")
-	//fmt.Println(wallet.Address, wallet.PublicKey)
-	Wallets[wallet.PublicKey] = &wallet
 
 	// LibP2P code uses golog to log messages. They log with different
 	// string IDs (i.e. "swarm"). We can control the verbosity level for
@@ -202,6 +191,21 @@ func main() {
 	seed := flag.Int64("s", 0, "set random seed for id generation")
 	miner := flag.Bool("m", false, "set node as miner")
 	flag.Parse()
+
+	utxos := make(map[string]*UTXO)
+	genesisBlock := Block{}
+	gen_hash := getBlockHash(genesisBlock)
+	gen_prev_hash := make([]byte, 32)
+	gen_sum := binary.BigEndian.Uint32(gen_hash)
+	Signature = os.Getenv("SIG") + string(*listenF)
+	genesisBlock = Block{0, t, POW_DIFFICULTY, POWS_DIFFICULTY, Signature, gen_hash, gen_sum, gen_prev_hash, "", utxos, 10, 10, false}
+	Blockchain = append(Blockchain, genesisBlock)
+	UTXOs = make(map[string]*UTXO, 0)
+	Wallets = make(map[string]*Wallet, 0)
+
+	wallet := newWallet("Gattaka")
+	//fmt.Println(wallet.Address, wallet.PublicKey)
+	Wallets[wallet.PublicKey] = &wallet
 
 	// Make a host that listens on the given multiaddress
 	host, err := makeBasicHost(*listenF, *seed)
